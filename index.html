@@ -1,0 +1,1537 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0d6efd">
+  <title>OUALDECO - Commandes & Livraisons</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+
+  <style>
+    :root {
+      --app-blue:#0d6efd;
+      --app-bg:#f5f7fb;
+      --card-radius:16px;
+    }
+    body {
+      background:var(--app-bg);
+      padding-bottom:82px;
+      font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+    }
+    .app-header {
+      background:linear-gradient(135deg,#0d6efd,#0b5ed7);
+      color:white;
+      position:sticky;
+      top:0;
+      z-index:1030;
+    }
+    .app-header .container { min-height:64px; }
+    .screen { display:none; }
+    .screen.active { display:block; }
+    .stat-card {
+      border:0;
+      border-radius:var(--card-radius);
+      min-height:105px;
+      box-shadow:0 3px 12px rgba(0,0,0,.06);
+    }
+    .stat-number { font-size:1.55rem;font-weight:700; }
+    .app-card {
+      border:0;
+      border-radius:var(--card-radius);
+      box-shadow:0 3px 12px rgba(0,0,0,.06);
+    }
+    .order-card {
+      border:1px solid #e9edf3;
+      border-radius:14px;
+      background:white;
+      transition:transform .15s ease;
+      cursor:pointer;
+    }
+    .order-card:active { transform:scale(.99); }
+    .status-badge {
+      font-size:.75rem;
+      padding:.42rem .65rem;
+      border-radius:999px;
+      white-space:nowrap;
+      display:inline-block;
+    }
+    .status-prep { background:#fff3cd;color:#856404; }
+    .status-progress { background:#e2d9f3;color:#59359a; }
+    .status-ready { background:#cfe2ff;color:#084298; }
+    .status-delivered { background:#d1e7dd;color:#0f5132; }
+    .status-delivery { background:#cff4fc;color:#055160; }
+    .status-cancelled { background:#f8d7da;color:#842029; }
+    .bottom-nav {
+      position:fixed;
+      left:0;right:0;bottom:0;
+      z-index:1040;
+      background:rgba(255,255,255,.97);
+      border-top:1px solid #e5e7eb;
+      height:72px;
+    }
+    .bottom-nav .nav-btn {
+      border:0;background:transparent;color:#6c757d;
+      font-size:.72rem;padding:7px 8px;
+    }
+    .bottom-nav .nav-btn.active { color:var(--app-blue);font-weight:600; }
+    .bottom-nav i { display:block;font-size:1.25rem;line-height:1.1;margin-bottom:2px; }
+    .fab {
+      width:54px;height:54px;border-radius:50%;border:0;
+      box-shadow:0 5px 15px rgba(13,110,253,.3);
+      font-size:1.5rem;margin-top:-22px;
+    }
+    .form-control,.form-select { min-height:46px;border-radius:11px; }
+    .btn-app { min-height:48px;border-radius:11px;font-weight:600; }
+    .section-title { font-weight:700;font-size:1rem; }
+    .timeline { position:relative;padding-left:24px; }
+    .timeline::before {
+      content:"";position:absolute;left:8px;top:5px;bottom:5px;
+      width:2px;background:#dee2e6;
+    }
+    .timeline-item { position:relative;padding-bottom:18px; }
+    .timeline-item::before {
+      content:"";position:absolute;left:-20px;top:3px;
+      width:10px;height:10px;border-radius:50%;background:var(--app-blue);
+    }
+    .product-row {
+      background:#f8f9fa;border-radius:12px;padding:12px;margin-bottom:10px;
+    }
+    .small-muted { color:#6c757d;font-size:.84rem; }
+    .empty-state { text-align:center;padding:45px 20px;color:#6c757d; }
+    .loading-overlay {
+      position:fixed;inset:0;background:rgba(255,255,255,.75);
+      z-index:2000;display:none;align-items:center;justify-content:center;
+      backdrop-filter:blur(2px);
+    }
+    .loading-overlay.show { display:flex; }
+    .toast-container { z-index:3000; }
+    .clickable { cursor:pointer; }
+    .danger-zone { border:1px solid #f1b0b7;background:#fff5f5; }
+    @media (min-width:768px) {
+      .mobile-container { max-width:900px; }
+      body { padding-bottom:20px; }
+      .bottom-nav { display:none!important; }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="loadingOverlay" class="loading-overlay">
+    <div class="text-center">
+      <div class="spinner-border text-primary mb-2"></div>
+      <div class="small fw-semibold" id="loadingText">Chargement...</div>
+    </div>
+  </div>
+
+  <div class="toast-container position-fixed top-0 end-0 p-3">
+    <div id="appToast" class="toast" role="alert">
+      <div class="toast-header">
+        <i class="bi bi-info-circle me-2"></i>
+        <strong class="me-auto">OUALDECO</strong>
+        <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+      </div>
+      <div class="toast-body" id="toastBody"></div>
+    </div>
+  </div>
+
+  <header class="app-header shadow-sm">
+    <div class="container mobile-container d-flex align-items-center justify-content-between px-3">
+      <div>
+        <div class="fw-bold fs-5">OUALDECO</div>
+        <div class="small opacity-75">Commandes & Livraisons</div>
+      </div>
+      <button class="btn btn-link text-white fs-4 p-0" onclick="showScreen('menu')">
+        <i class="bi bi-list"></i>
+      </button>
+    </div>
+  </header>
+
+  <main class="container mobile-container py-3">
+
+    <!-- ACCUEIL -->
+    <section id="screen-home" class="screen active">
+      <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+          <h4 class="fw-bold mb-1">Bonjour 👋</h4>
+          <div class="small-muted">Voici l'état de vos commandes.</div>
+        </div>
+        <button class="btn btn-sm btn-outline-primary" onclick="refreshApp()" title="Actualiser">
+          <i class="bi bi-arrow-clockwise"></i>
+        </button>
+      </div>
+
+      <div class="row g-2 mb-3">
+        <div class="col-6">
+          <div class="card stat-card p-3">
+            <div class="small-muted"><i class="bi bi-box-seam me-1"></i> Commandes</div>
+            <div class="stat-number" id="statOrders">0</div>
+            <div class="small-muted">au total</div>
+          </div>
+        </div>
+        <div class="col-6">
+          <div class="card stat-card p-3">
+            <div class="small-muted"><i class="bi bi-hourglass-split me-1"></i> À préparer</div>
+            <div class="stat-number" id="statPrep">0</div>
+            <div class="small-muted">en attente</div>
+          </div>
+        </div>
+        <div class="col-6">
+          <div class="card stat-card p-3">
+            <div class="small-muted"><i class="bi bi-check-circle me-1"></i> Prêtes</div>
+            <div class="stat-number" id="statReady">0</div>
+            <div class="small-muted">à livrer</div>
+          </div>
+        </div>
+        <div class="col-6">
+          <div class="card stat-card p-3">
+            <div class="small-muted"><i class="bi bi-truck me-1"></i> Livrées</div>
+            <div class="stat-number" id="statDelivered">0</div>
+            <div class="small-muted">terminées</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card app-card p-3 mb-3">
+        <div class="d-flex justify-content-between mb-2">
+          <div>
+            <div class="section-title">Finances</div>
+            <div class="small-muted">Vue rapide</div>
+          </div>
+        </div>
+        <div class="d-flex justify-content-between py-2 border-bottom">
+          <span>Total commandes</span><strong id="dashTotalMoney">0 Ar</strong>
+        </div>
+        <div class="d-flex justify-content-between py-2 border-bottom">
+          <span>Acomptes reçus</span><strong id="dashDeposits">0 Ar</strong>
+        </div>
+        <div class="d-flex justify-content-between pt-2">
+          <span>Reste à encaisser</span><strong id="dashRemaining">0 Ar</strong>
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn-app w-100 mb-3" onclick="openNewOrder()">
+        <i class="bi bi-plus-lg me-2"></i>Nouvelle commande
+      </button>
+
+      <div class="card app-card p-3 mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div class="section-title"><i class="bi bi-truck me-2"></i>Livraisons à venir</div>
+          <button class="btn btn-sm btn-link text-decoration-none" onclick="showScreen('deliveries')">Voir tout</button>
+        </div>
+        <div id="upcomingDeliveries"></div>
+      </div>
+
+      <div class="card app-card p-3">
+        <div class="section-title mb-2"><i class="bi bi-clock-history me-2"></i>Dernières commandes</div>
+        <div id="recentOrders"></div>
+      </div>
+    </section>
+
+    <!-- COMMANDES -->
+    <section id="screen-orders" class="screen">
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <div>
+          <h4 class="fw-bold mb-1">Commandes</h4>
+          <div class="small-muted" id="ordersCountLabel">0 commande</div>
+        </div>
+        <button class="btn btn-primary rounded-circle" onclick="openNewOrder()" style="width:46px;height:46px;">
+          <i class="bi bi-plus-lg"></i>
+        </button>
+      </div>
+
+      <div class="input-group mb-3">
+        <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+        <input id="orderSearch" type="search" class="form-control"
+               placeholder="Rechercher client ou commande..." oninput="renderOrders()">
+      </div>
+
+      <div class="d-flex gap-2 overflow-auto pb-2 mb-2">
+        <button class="btn btn-primary btn-sm rounded-pill filter-btn" data-filter="all" onclick="setFilter('all',this)">Toutes</button>
+        <button class="btn btn-outline-secondary btn-sm rounded-pill filter-btn" data-filter="prep" onclick="setFilter('prep',this)">À préparer</button>
+        <button class="btn btn-outline-secondary btn-sm rounded-pill filter-btn" data-filter="progress" onclick="setFilter('progress',this)">En préparation</button>
+        <button class="btn btn-outline-secondary btn-sm rounded-pill filter-btn" data-filter="ready" onclick="setFilter('ready',this)">Prêtes</button>
+        <button class="btn btn-outline-secondary btn-sm rounded-pill filter-btn" data-filter="delivered" onclick="setFilter('delivered',this)">Livrées</button>
+      </div>
+
+      <div id="ordersList"></div>
+    </section>
+
+    <!-- DETAIL COMMANDE -->
+    <section id="screen-order-detail" class="screen">
+      <button class="btn btn-link px-0 text-decoration-none mb-2" onclick="showScreen('orders')">
+        <i class="bi bi-arrow-left me-1"></i> Retour
+      </button>
+      <div id="orderDetailContent"></div>
+    </section>
+
+    <!-- LIVRAISONS -->
+    <section id="screen-deliveries" class="screen">
+      <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+          <h4 class="fw-bold mb-1">Livraisons</h4>
+          <div class="small-muted">Suivi rapide des livraisons.</div>
+        </div>
+        <button class="btn btn-sm btn-outline-primary" onclick="refreshApp()"><i class="bi bi-arrow-clockwise"></i></button>
+      </div>
+
+      <div class="d-flex gap-2 overflow-auto pb-2 mb-2">
+        <button class="btn btn-primary btn-sm rounded-pill delivery-filter-btn" data-filter="all" onclick="setDeliveryFilter('all',this)">Toutes</button>
+        <button class="btn btn-outline-secondary btn-sm rounded-pill delivery-filter-btn" data-filter="À livrer" onclick="setDeliveryFilter('À livrer',this)">À livrer</button>
+        <button class="btn btn-outline-secondary btn-sm rounded-pill delivery-filter-btn" data-filter="En cours" onclick="setDeliveryFilter('En cours',this)">En cours</button>
+        <button class="btn btn-outline-secondary btn-sm rounded-pill delivery-filter-btn" data-filter="Livrée" onclick="setDeliveryFilter('Livrée',this)">Livrées</button>
+      </div>
+
+      <div class="input-group mb-3">
+        <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+        <input id="deliverySearch" type="search" class="form-control"
+               placeholder="Rechercher client ou commande..." oninput="renderDeliveries()">
+      </div>
+
+      <div id="deliveriesList"></div>
+    </section>
+
+    <!-- DETAIL LIVRAISON -->
+    <section id="screen-delivery-detail" class="screen">
+      <button class="btn btn-link px-0 text-decoration-none mb-2" onclick="showScreen('deliveries')">
+        <i class="bi bi-arrow-left me-1"></i> Retour
+      </button>
+      <div id="deliveryDetailContent"></div>
+    </section>
+
+    <!-- NOUVELLE COMMANDE -->
+    <section id="screen-new-order" class="screen">
+      <button class="btn btn-link px-0 text-decoration-none mb-2" onclick="showScreen('home')">
+        <i class="bi bi-arrow-left me-1"></i> Retour
+      </button>
+
+      <h4 class="fw-bold mb-3">Nouvelle commande</h4>
+
+      <div class="card app-card p-3 mb-3">
+        <div class="section-title mb-3">Client</div>
+        <div class="mb-3">
+          <label class="form-label">Client *</label>
+          <input id="client" class="form-control" placeholder="Nom du client">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Contact</label>
+          <input id="contact" type="tel" class="form-control" placeholder="Téléphone">
+        </div>
+        <div>
+          <label class="form-label">Lieu de livraison</label>
+          <input id="location" class="form-control" placeholder="Adresse / lieu">
+        </div>
+      </div>
+
+      <div class="card app-card p-3 mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div class="section-title">Produits / Prestations</div>
+          <button class="btn btn-sm btn-outline-primary" onclick="addProduct()">
+            <i class="bi bi-plus-lg"></i> Ajouter
+          </button>
+        </div>
+        <div id="products"></div>
+      </div>
+
+      <div class="card app-card p-3 mb-3">
+        <div class="section-title mb-3">Livraison & paiement</div>
+        <div class="mb-3">
+          <label class="form-label">Date prévue</label>
+          <input id="deliveryDate" type="date" class="form-control">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Montant total</label>
+          <input id="total" class="form-control" value="0 Ar" readonly>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Acompte</label>
+          <input id="deposit" type="number" min="0" class="form-control" value="0" oninput="calculateRemaining()">
+        </div>
+        <div>
+          <label class="form-label">Reste à payer</label>
+          <input id="remaining" class="form-control" value="0 Ar" readonly>
+        </div>
+      </div>
+
+      <div class="card app-card p-3 mb-3">
+        <div class="section-title mb-3">Informations complémentaires</div>
+        <div class="mb-3">
+          <label class="form-label">Numéro de facture</label>
+          <input id="invoiceNumber" class="form-control" placeholder="Facultatif">
+        </div>
+        <div>
+          <label class="form-label">Notes</label>
+          <textarea id="orderNotes" class="form-control" rows="3" placeholder="Notes internes..."></textarea>
+        </div>
+      </div>
+
+      <button id="saveOrderBtn" class="btn btn-primary btn-app w-100" onclick="saveOrder()">
+        <i class="bi bi-save me-2"></i>Enregistrer la commande
+      </button>
+    </section>
+
+    <!-- HISTORIQUE -->
+    <section id="screen-history" class="screen">
+      <div class="mb-3">
+        <h4 class="fw-bold mb-1">Historique</h4>
+        <div class="small-muted">Commandes terminées.</div>
+      </div>
+      <div class="card app-card p-3">
+        <div id="historyList"></div>
+      </div>
+    </section>
+
+    <!-- FACTURE -->
+    <section id="screen-invoice-info" class="screen">
+      <button class="btn btn-link px-0 text-decoration-none mb-2" onclick="showScreen('menu')">
+        <i class="bi bi-arrow-left me-1"></i> Retour
+      </button>
+      <h4 class="fw-bold mb-3">Facture</h4>
+      <div id="invoiceContent"></div>
+    </section>
+
+    <!-- MENU -->
+    <section id="screen-menu" class="screen">
+      <h4 class="fw-bold mb-3">Menu</h4>
+      <div class="card app-card p-2">
+        <button class="btn btn-light text-start p-3" onclick="showScreen('home')"><i class="bi bi-house-door me-3"></i>Accueil</button>
+        <button class="btn btn-light text-start p-3" onclick="showScreen('orders')"><i class="bi bi-box-seam me-3"></i>Commandes</button>
+        <button class="btn btn-light text-start p-3" onclick="showScreen('deliveries')"><i class="bi bi-truck me-3"></i>Livraisons</button>
+        <button class="btn btn-light text-start p-3" onclick="showScreen('history')"><i class="bi bi-clock-history me-3"></i>Historique</button>
+        <button class="btn btn-light text-start p-3" onclick="openInvoiceFromLastOrder()"><i class="bi bi-receipt me-3"></i>Factures</button>
+        <button class="btn btn-light text-start p-3" onclick="showScreen('home')"><i class="bi bi-people me-3"></i>Clients <span class="small-muted">(via recherche commandes)</span></button>
+        <button class="btn btn-light text-start p-3" onclick="refreshApp()"><i class="bi bi-arrow-clockwise me-3"></i>Actualiser les données</button>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="bottom-nav">
+    <div class="container mobile-container h-100 d-flex align-items-center justify-content-around">
+      <button class="nav-btn active" data-screen="home" onclick="showScreen('home')">
+        <i class="bi bi-house-door"></i>Accueil
+      </button>
+      <button class="nav-btn" data-screen="orders" onclick="showScreen('orders')">
+        <i class="bi bi-box-seam"></i>Commandes
+      </button>
+      <button class="btn btn-primary fab" onclick="openNewOrder()" aria-label="Nouvelle commande">
+        <i class="bi bi-plus-lg"></i>
+      </button>
+      <button class="nav-btn" data-screen="deliveries" onclick="showScreen('deliveries')">
+        <i class="bi bi-truck"></i>Livraisons
+      </button>
+      <button class="nav-btn" data-screen="menu" onclick="showScreen('menu')">
+        <i class="bi bi-list"></i>Menu
+      </button>
+    </div>
+  </nav>
+
+  <!-- Modal : création livraison -->
+  <div class="modal fade" id="deliveryModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Nouvelle livraison</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="deliveryOrderNumber">
+          <div class="mb-3">
+            <label class="form-label">Date de livraison *</label>
+            <input id="newDeliveryDate" type="date" class="form-control">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Lieu</label>
+            <input id="newDeliveryPlace" class="form-control">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Quantité</label>
+            <input id="newDeliveryQty" type="number" min="0" class="form-control">
+          </div>
+          <div>
+            <label class="form-label">Montant de la livraison</label>
+            <input id="newDeliveryAmount" type="number" min="0" class="form-control">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+          <button class="btn btn-primary" onclick="saveDelivery()">Créer la livraison</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    const state = {
+      commandes: [],
+      livraisons: [],
+      dashboard: null,
+      currentScreen: 'home',
+      currentFilter: 'all',
+      currentDeliveryFilter: 'all',
+      selectedOrder: null,
+      selectedDelivery: null
+    };
+
+    let deliveryModal;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      deliveryModal = new bootstrap.Modal(document.getElementById('deliveryModal'));
+      resetNewOrderForm();
+      refreshApp();
+    });
+
+    // =========================================================
+    // API GOOGLE APPS SCRIPT
+    // =========================================================
+
+    // L'HTML est hébergé sur GitHub Pages.
+    // Apps Script est utilisé uniquement comme API vers Google Sheets.
+    const API_URL = 'https://script.google.com/macros/s/AKfycbxyvqKkh2JX6nS1hRfNOdkAUSBhZoJXTuKkWfO6XTiUPrOg7NtjYO236WBk-oA_lbAs/exec';
+
+    let jsonpCounter = 0;
+
+    function serverCall(functionName, ...args) {
+      return new Promise((resolve, reject) => {
+        const callbackName = '__oualdeco_jsonp_' + Date.now() + '_' + (++jsonpCounter);
+        const script = document.createElement('script');
+        const timeout = setTimeout(() => {
+          cleanup();
+          reject(new Error('Le serveur Google Apps Script ne répond pas.'));
+        }, 30000);
+
+        function cleanup() {
+          clearTimeout(timeout);
+          try { delete window[callbackName]; } catch (e) { window[callbackName] = undefined; }
+          if (script.parentNode) script.parentNode.removeChild(script);
+        }
+
+        window[callbackName] = function(result) {
+          cleanup();
+          resolve(result);
+        };
+
+        script.onerror = function() {
+          cleanup();
+          reject(new Error('Impossible de contacter l\'API OUALDECO. Vérifiez le déploiement Apps Script.'));
+        };
+
+        const params = new URLSearchParams();
+        params.set('action', functionName);
+        params.set('callback', callbackName);
+        params.set('payload', JSON.stringify(args));
+
+        script.src = API_URL + '?' + params.toString();
+        document.head.appendChild(script);
+      });
+    }
+
+    async function callBackend(functionName, ...args) {
+      try {
+        const result = await serverCall(functionName, ...args);
+
+        if (!result || result.ok !== true) {
+          throw new Error(result && result.message ? result.message : 'Erreur inconnue.');
+        }
+
+        return result.data;
+      } catch (error) {
+        showToast(error.message || 'Une erreur est survenue.', 'danger');
+        throw error;
+      }
+    }
+
+    async function refreshApp() {
+      setLoading(true, 'Synchronisation avec Google Sheets...');
+      try {
+        const [dashboard, commandes, livraisons] = await Promise.all([
+          callBackend('getDashboard'),
+          callBackend('getCommandes'),
+          callBackend('getLivraisons')
+        ]);
+
+        state.dashboard = dashboard;
+        state.commandes = commandes || [];
+        state.livraisons = livraisons || [];
+
+        renderDashboard();
+        renderOrders();
+        renderDeliveries();
+        renderHistory();
+
+        if (state.selectedOrder) {
+          const exists = state.commandes.some(c =>
+            String(c.numeroCommande) === String(state.selectedOrder.numeroCommande)
+          );
+          if (exists) await openOrderDetail(state.selectedOrder.numeroCommande, false);
+        }
+
+        if (state.selectedDelivery) {
+          const exists = state.livraisons.some(l =>
+            String(l.idLivraison) === String(state.selectedDelivery.idLivraison)
+          );
+          if (exists) await openDeliveryDetail(state.selectedDelivery.idLivraison, false);
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    // =========================================================
+    // NAVIGATION
+    // =========================================================
+
+    function showScreen(name) {
+      document.querySelectorAll('.screen').forEach(screen => screen.classList.remove('active'));
+
+      const target = document.getElementById('screen-' + name);
+      if (target) target.classList.add('active');
+
+      document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.screen === name);
+      });
+
+      state.currentScreen = name;
+
+      if (name === 'home') renderDashboard();
+      if (name === 'orders') renderOrders();
+      if (name === 'deliveries') renderDeliveries();
+      if (name === 'history') renderHistory();
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // =========================================================
+    // DASHBOARD
+    // =========================================================
+
+    function renderDashboard() {
+      const d = state.dashboard;
+      if (!d) return;
+
+      const s = d.stats || {};
+
+      setText('statOrders', s.commandesTotal || 0);
+      setText('statPrep', s.commandesAPreparer || 0);
+      setText('statReady', s.commandesPretes || 0);
+      setText('statDelivered', s.commandesLivrees || 0);
+
+      setText('dashTotalMoney', formatMoney(s.chiffreAffaires || 0));
+      setText('dashDeposits', formatMoney(s.acomptes || 0));
+      setText('dashRemaining', formatMoney(s.resteAEncaisser || 0));
+
+      const upcoming = document.getElementById('upcomingDeliveries');
+      const deliveries = d.prochainesLivraisons || [];
+
+      if (!deliveries.length) {
+        upcoming.innerHTML = emptyState('Aucune livraison à venir.');
+      } else {
+        upcoming.innerHTML = deliveries.map(l => `
+          <div class="order-card p-3 mb-2" onclick="openDeliveryDetail('${esc(l.idLivraison)}')">
+            <div class="d-flex justify-content-between">
+              <strong>${esc(l.client || l.numeroCommande)}</strong>
+              <span class="small-muted">${formatDate(l.dateLivraison)}</span>
+            </div>
+            <div class="small-muted">${esc(l.numeroCommande)} · ${esc(l.lieu || '')}</div>
+            <div class="mt-2">${statusBadge(l.statut)}</div>
+          </div>
+        `).join('');
+      }
+
+      const recent = document.getElementById('recentOrders');
+      const orders = d.dernieresCommandes || [];
+
+      if (!orders.length) {
+        recent.innerHTML = emptyState('Aucune commande.');
+      } else {
+        recent.innerHTML = orders.map((c, i) => `
+          <div class="d-flex justify-content-between py-2 ${i < orders.length - 1 ? 'border-bottom' : ''} clickable"
+               onclick="openOrderDetail('${esc(c.numeroCommande)}')">
+            <div>
+              <strong>${esc(c.numeroCommande)}</strong>
+              <div class="small-muted">${esc(c.client || '')}</div>
+            </div>
+            ${statusBadge(c.statut)}
+          </div>
+        `).join('');
+      }
+    }
+
+    // =========================================================
+    // COMMANDES
+    // =========================================================
+
+    function setFilter(filter, button) {
+      state.currentFilter = filter;
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-outline-secondary');
+      });
+      button.classList.remove('btn-outline-secondary');
+      button.classList.add('btn-primary');
+      renderOrders();
+    }
+
+    function renderOrders() {
+      const list = document.getElementById('ordersList');
+      if (!list) return;
+
+      const search = (document.getElementById('orderSearch')?.value || '').toLowerCase().trim();
+
+      const filtered = state.commandes.filter(c => {
+        const matchesFilter =
+          state.currentFilter === 'all' ||
+          statusToOrderFilter(c.statut) === state.currentFilter;
+
+        const text = [
+          c.numeroCommande, c.client, c.contact, c.lieuLivraison, c.statut
+        ].join(' ').toLowerCase();
+
+        return matchesFilter && text.includes(search);
+      });
+
+      setText('ordersCountLabel', `${filtered.length} commande${filtered.length > 1 ? 's' : ''} affichée${filtered.length > 1 ? 's' : ''}`);
+
+      updateFilterCounts();
+
+      if (!filtered.length) {
+        list.innerHTML = emptyState('Aucune commande ne correspond à votre recherche.');
+        return;
+      }
+
+      list.innerHTML = filtered.map(c => {
+        const count = c.nombreProduits !== undefined ? c.nombreProduits : '?';
+        return `
+          <div class="order-card p-3 mb-2" onclick="openOrderDetail('${esc(c.numeroCommande)}')">
+            <div class="d-flex justify-content-between gap-2">
+              <strong>${esc(c.numeroCommande)}</strong>
+              ${statusBadge(c.statut)}
+            </div>
+            <div class="fw-semibold mt-1">${esc(c.client || 'Client non renseigné')}</div>
+            <div class="small-muted">${formatDate(c.dateLivraisonPrevue)} · ${esc(c.lieuLivraison || 'Lieu non renseigné')}</div>
+            <div class="d-flex justify-content-between mt-2">
+              <span>${count} produit${count !== 1 ? 's' : ''}</span>
+              <strong>${formatMoney(c.montantTotal)}</strong>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function updateFilterCounts() {
+      const counts = {
+        all: state.commandes.length,
+        prep: state.commandes.filter(c => statusToOrderFilter(c.statut) === 'prep').length,
+        progress: state.commandes.filter(c => statusToOrderFilter(c.statut) === 'progress').length,
+        ready: state.commandes.filter(c => statusToOrderFilter(c.statut) === 'ready').length,
+        delivered: state.commandes.filter(c => statusToOrderFilter(c.statut) === 'delivered').length
+      };
+
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        const f = btn.dataset.filter;
+        const labels = {
+          all:'Toutes',
+          prep:'À préparer',
+          progress:'En préparation',
+          ready:'Prêtes',
+          delivered:'Livrées'
+        };
+        btn.textContent = `${labels[f]} (${counts[f]})`;
+      });
+    }
+
+    function statusToOrderFilter(status) {
+      if (status === 'À préparer') return 'prep';
+      if (status === 'En préparation') return 'progress';
+      if (status === 'Prête') return 'ready';
+      if (status === 'Livrée') return 'delivered';
+      return 'all';
+    }
+
+    async function openOrderDetail(numeroCommande, navigate = true) {
+      setLoading(true, 'Chargement de la commande...');
+      try {
+        const data = await callBackend('getCommande', numeroCommande);
+        state.selectedOrder = data;
+        renderOrderDetail(data);
+        if (navigate) showScreen('order-detail');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    function renderOrderDetail(c) {
+      const content = document.getElementById('orderDetailContent');
+      if (!content || !c) return;
+
+      const isDelivered = c.statut === 'Livrée';
+      const nextStatus =
+        c.statut === 'À préparer' ? 'En préparation' :
+        c.statut === 'En préparation' ? 'Prête' :
+        c.statut === 'Prête' ? 'Livrée' : null;
+
+      content.innerHTML = `
+        <div class="d-flex justify-content-between align-items-start mb-3">
+          <div>
+            <h4 class="fw-bold mb-1">${esc(c.numeroCommande)}</h4>
+            <div class="small-muted">Commande du ${formatDateTime(c.date)}</div>
+          </div>
+          ${statusBadge(c.statut)}
+        </div>
+
+        <div class="card app-card p-3 mb-3">
+          <div class="section-title mb-2">Client</div>
+          <div class="fw-semibold">${esc(c.client || '')}</div>
+          ${c.contact ? `<div class="small-muted"><i class="bi bi-telephone me-1"></i>${esc(c.contact)}</div>` : ''}
+          ${c.lieuLivraison ? `<div class="small-muted"><i class="bi bi-geo-alt me-1"></i>${esc(c.lieuLivraison)}</div>` : ''}
+        </div>
+
+        <div class="card app-card p-3 mb-3">
+          <div class="section-title mb-2">Produits / Prestations</div>
+          ${(c.lignes || []).length ? c.lignes.map(l => `
+            <div class="product-row d-flex justify-content-between gap-2">
+              <div>
+                <strong>${esc(l.produit)}</strong>
+                <div class="small-muted">Quantité : ${formatNumber(l.quantite)} · PU : ${formatMoney(l.prixUnitaire)}</div>
+              </div>
+              <strong>${formatMoney(l.montant)}</strong>
+            </div>
+          `).join('') : emptyState('Aucun produit.')}
+
+          <div class="border-top pt-2 d-flex justify-content-between">
+            <strong>Total</strong><strong>${formatMoney(c.montantTotal)}</strong>
+          </div>
+        </div>
+
+        <div class="card app-card p-3 mb-3">
+          <div class="section-title mb-3">Paiement</div>
+          <div class="d-flex justify-content-between mb-2"><span>Total</span><strong>${formatMoney(c.montantTotal)}</strong></div>
+          <div class="d-flex justify-content-between mb-2"><span>Acompte</span><strong>${formatMoney(c.acompte)}</strong></div>
+          <div class="d-flex justify-content-between"><span>Reste à payer</span><strong>${formatMoney(c.reste)}</strong></div>
+          <button class="btn btn-sm btn-outline-primary mt-3" onclick="editPayment('${esc(c.numeroCommande)}', ${Number(c.acompte) || 0})">
+            <i class="bi bi-pencil me-1"></i>Modifier l'acompte
+          </button>
+        </div>
+
+        <div class="card app-card p-3 mb-3">
+          <div class="section-title mb-3">État de la commande</div>
+          <div class="timeline">
+            ${timelineItem('Commande créée', formatDateTime(c.date), true)}
+            ${timelineItem('À préparer', c.statut === 'À préparer' ? 'Actuellement' : 'Passée / traitée', c.statut !== 'Annulée')}
+            ${timelineItem('En préparation', c.statut === 'En préparation' ? 'Actuellement' : '', ['Prête','Livrée'].includes(c.statut))}
+            ${timelineItem('Prête', c.statut === 'Prête' ? 'Actuellement' : '', c.statut === 'Prête' || c.statut === 'Livrée')}
+            ${timelineItem('Livrée', c.statut === 'Livrée' ? 'Terminée' : 'À venir', c.statut === 'Livrée', true)}
+          </div>
+        </div>
+
+        <div class="card app-card p-3 mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="section-title">Livraisons</div>
+            <button class="btn btn-sm btn-outline-primary" onclick="openCreateDelivery('${esc(c.numeroCommande)}')">
+              <i class="bi bi-plus-lg"></i> Ajouter
+            </button>
+          </div>
+
+          ${(c.livraisons || []).length ? c.livraisons.map(l => `
+            <div class="border rounded-3 p-3 mb-2 clickable" onclick="openDeliveryDetail('${esc(l.idLivraison)}')">
+              <div class="d-flex justify-content-between gap-2">
+                <strong>${esc(l.idLivraison)}</strong>${statusBadge(l.statut)}
+              </div>
+              <div class="small-muted">${formatDate(l.dateLivraison)} · ${formatNumber(l.quantite)} unités · ${formatMoney(l.montant)}</div>
+            </div>
+          `).join('') : emptyState('Aucune livraison enregistrée.')}
+        </div>
+
+        ${c.notes ? `
+          <div class="card app-card p-3 mb-3">
+            <div class="section-title mb-2">Notes</div>
+            <div class="small-muted" style="white-space:pre-wrap">${esc(c.notes)}</div>
+          </div>
+        ` : ''}
+
+        <div class="d-grid gap-2 mb-2">
+          ${nextStatus ? `
+            <button class="btn btn-primary btn-app" onclick="changeOrderStatus('${esc(c.numeroCommande)}','${esc(nextStatus)}')">
+              <i class="bi bi-check2-circle me-2"></i>${nextStatus === 'Livrée' ? 'Marquer comme livrée' : 'Passer à « ' + nextStatus + ' »'}
+            </button>
+          ` : ''}
+          <button class="btn btn-outline-primary btn-app" onclick="openInvoice('${esc(c.numeroCommande)}')">
+            <i class="bi bi-receipt me-2"></i>Voir les informations de facture
+          </button>
+          <button class="btn btn-outline-secondary btn-app" onclick="editOrderInfo('${esc(c.numeroCommande)}')">
+            <i class="bi bi-pencil me-2"></i>Modifier les informations
+          </button>
+        </div>
+
+        <div class="card p-3 mt-3 danger-zone">
+          <div class="fw-semibold text-danger mb-1">Zone sensible</div>
+          <div class="small-muted mb-2">Supprimer cette commande supprimera aussi ses lignes produits et ses livraisons.</div>
+          <button class="btn btn-outline-danger btn-sm" onclick="deleteOrder('${esc(c.numeroCommande)}')">
+            <i class="bi bi-trash me-1"></i>Supprimer la commande
+          </button>
+        </div>
+      `;
+    }
+
+    // =========================================================
+    // LIVRAISONS
+    // =========================================================
+
+    function setDeliveryFilter(filter, button) {
+      state.currentDeliveryFilter = filter;
+      document.querySelectorAll('.delivery-filter-btn').forEach(btn => {
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-outline-secondary');
+      });
+      button.classList.remove('btn-outline-secondary');
+      button.classList.add('btn-primary');
+      renderDeliveries();
+    }
+
+    function renderDeliveries() {
+      const list = document.getElementById('deliveriesList');
+      if (!list) return;
+
+      const search = (document.getElementById('deliverySearch')?.value || '').toLowerCase().trim();
+
+      const filtered = state.livraisons.filter(l => {
+        const filterOk = state.currentDeliveryFilter === 'all' ||
+          l.statut === state.currentDeliveryFilter;
+
+        const text = [
+          l.idLivraison, l.numeroCommande, l.client, l.contact, l.lieu, l.statut
+        ].join(' ').toLowerCase();
+
+        return filterOk && text.includes(search);
+      });
+
+      if (!filtered.length) {
+        list.innerHTML = emptyState('Aucune livraison ne correspond à votre recherche.');
+        return;
+      }
+
+      list.innerHTML = filtered.map(l => `
+        <div class="order-card p-3 mb-2" onclick="openDeliveryDetail('${esc(l.idLivraison)}')">
+          <div class="d-flex justify-content-between gap-2">
+            <strong>${esc(l.numeroCommande)}</strong>
+            ${statusBadge(l.statut)}
+          </div>
+          <div class="fw-semibold mt-1">${esc(l.client || '')}</div>
+          <div class="small-muted">${formatDate(l.dateLivraison)} · ${esc(l.lieu || '')}</div>
+          <div class="mt-2">${formatNumber(l.quantite)} unités · <strong>${formatMoney(l.montant)}</strong></div>
+        </div>
+      `).join('');
+    }
+
+    async function openDeliveryDetail(idLivraison, navigate = true) {
+      setLoading(true, 'Chargement de la livraison...');
+      try {
+        const data = await callBackend('getLivraison', idLivraison);
+        state.selectedDelivery = data;
+        renderDeliveryDetail(data);
+        if (navigate) showScreen('delivery-detail');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    function renderDeliveryDetail(l) {
+      const content = document.getElementById('deliveryDetailContent');
+      if (!content || !l) return;
+
+      const canDeliver = l.statut !== 'Livrée' && l.statut !== 'Annulée';
+
+      content.innerHTML = `
+        <div class="d-flex justify-content-between align-items-start mb-3">
+          <div>
+            <h4 class="fw-bold mb-1">Livraison</h4>
+            <div class="small-muted">${esc(l.idLivraison)} · ${esc(l.numeroCommande)}</div>
+          </div>
+          ${statusBadge(l.statut)}
+        </div>
+
+        <div class="card app-card p-3 mb-3">
+          <div class="section-title mb-2">Informations</div>
+          <div class="mb-2"><i class="bi bi-person me-2"></i><strong>${esc(l.client || '')}</strong></div>
+          <div class="mb-2"><i class="bi bi-calendar3 me-2"></i>${formatDate(l.dateLivraison)}</div>
+          <div class="mb-2"><i class="bi bi-geo-alt me-2"></i>${esc(l.lieu || '')}</div>
+          <div><i class="bi bi-box-seam me-2"></i>${formatNumber(l.quantite)} unités</div>
+          ${l.contact ? `<div class="mt-2"><i class="bi bi-telephone me-2"></i>${esc(l.contact)}</div>` : ''}
+        </div>
+
+        <div class="card app-card p-3 mb-3">
+          <div class="section-title mb-2">Montant de la livraison</div>
+          <div class="fs-4 fw-bold">${formatMoney(l.montant)}</div>
+        </div>
+
+        ${canDeliver ? `
+          <button class="btn btn-success btn-app w-100 mb-2" onclick="markDelivered('${esc(l.idLivraison)}')">
+            <i class="bi bi-check-circle me-2"></i>Marquer comme livrée
+          </button>
+          ${l.statut === 'À livrer' ? `
+            <button class="btn btn-outline-primary btn-app w-100 mb-2" onclick="changeDeliveryStatus('${esc(l.idLivraison)}','En cours')">
+              <i class="bi bi-truck me-2"></i>Passer en cours
+            </button>
+          ` : ''}
+        ` : ''}
+
+        <button class="btn btn-outline-primary btn-app w-100" onclick="openOrderDetail('${esc(l.numeroCommande)}')">
+          <i class="bi bi-box-seam me-2"></i>Voir la commande
+        </button>
+      `;
+    }
+
+    // =========================================================
+    // NOUVELLE COMMANDE
+    // =========================================================
+
+    function openNewOrder() {
+      resetNewOrderForm();
+      showScreen('new-order');
+    }
+
+    function resetNewOrderForm() {
+      setValue('client', '');
+      setValue('contact', '');
+      setValue('location', '');
+      setValue('deposit', 0);
+      setValue('invoiceNumber', '');
+      setValue('orderNotes', '');
+
+      const dateInput = document.getElementById('deliveryDate');
+      if (dateInput) dateInput.value = todayISO();
+
+      const products = document.getElementById('products');
+      if (products) {
+        products.innerHTML = '';
+        addProduct();
+      }
+
+      calculateTotal();
+    }
+
+    function addProduct() {
+      const container = document.getElementById('products');
+      const row = document.createElement('div');
+      row.className = 'product-row';
+
+      row.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <input class="form-control product-name me-2" placeholder="Produit / modèle">
+          <button type="button" class="btn btn-outline-danger" onclick="this.closest('.product-row').remove(); calculateTotal();">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+        <div class="row g-2">
+          <div class="col-6">
+            <input type="number" min="0" step="any" class="form-control product-qty"
+                   placeholder="Quantité" oninput="calculateTotal()">
+          </div>
+          <div class="col-6">
+            <input type="number" min="0" step="any" class="form-control product-price"
+                   placeholder="Prix unitaire" oninput="calculateTotal()">
+          </div>
+        </div>
+      `;
+
+      container.appendChild(row);
+    }
+
+    function calculateTotal() {
+      let total = 0;
+
+      document.querySelectorAll('#products .product-row').forEach(row => {
+        const qty = Number(row.querySelector('.product-qty')?.value || 0);
+        const price = Number(row.querySelector('.product-price')?.value || 0);
+        total += qty * price;
+      });
+
+      setValue('total', formatMoney(total));
+      calculateRemaining();
+    }
+
+    function calculateRemaining() {
+      const total = getTotalFromForm();
+      const deposit = Number(document.getElementById('deposit')?.value || 0);
+      const remaining = Math.max(total - deposit, 0);
+      setValue('remaining', formatMoney(remaining));
+    }
+
+    function getTotalFromForm() {
+      let total = 0;
+      document.querySelectorAll('#products .product-row').forEach(row => {
+        total +=
+          Number(row.querySelector('.product-qty')?.value || 0) *
+          Number(row.querySelector('.product-price')?.value || 0);
+      });
+      return total;
+    }
+
+    async function saveOrder() {
+      const client = getValue('client');
+      const contact = getValue('contact');
+      const lieuLivraison = getValue('location');
+      const dateLivraisonPrevue = getValue('deliveryDate');
+      const acompte = Number(getValue('deposit') || 0);
+      const numeroFacture = getValue('invoiceNumber');
+      const notes = getValue('orderNotes');
+
+      if (!client) {
+        showToast('Veuillez saisir le nom du client.', 'warning');
+        return;
+      }
+
+      const lignes = [];
+      document.querySelectorAll('#products .product-row').forEach(row => {
+        const produit = row.querySelector('.product-name')?.value.trim() || '';
+        const quantite = Number(row.querySelector('.product-qty')?.value || 0);
+        const prixUnitaire = Number(row.querySelector('.product-price')?.value || 0);
+
+        if (produit && quantite > 0) {
+          lignes.push({ produit, quantite, prixUnitaire });
+        }
+      });
+
+      if (!lignes.length) {
+        showToast('Ajoutez au moins un produit avec une quantité supérieure à 0.', 'warning');
+        return;
+      }
+
+      const btn = document.getElementById('saveOrderBtn');
+      const oldHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Enregistrement...';
+
+      setLoading(true, 'Enregistrement de la commande...');
+
+      try {
+        const result = await callBackend('enregistrerCommande', {
+          client,
+          contact,
+          lieuLivraison,
+          dateLivraisonPrevue,
+          acompte,
+          numeroFacture,
+          notes,
+          lignes
+        });
+
+        showToast(`Commande ${result.numeroCommande} enregistrée.`, 'success');
+
+        resetNewOrderForm();
+        await refreshApp();
+        await openOrderDetail(result.numeroCommande);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = oldHtml;
+        setLoading(false);
+      }
+    }
+
+    // =========================================================
+    // STATUTS / ACTIONS
+    // =========================================================
+
+    async function changeOrderStatus(numeroCommande, statut) {
+      if (!confirm(`Changer le statut de ${numeroCommande} vers « ${statut} » ?`)) return;
+
+      setLoading(true, 'Mise à jour du statut...');
+      try {
+        await callBackend('modifierStatutCommande', numeroCommande, statut);
+        showToast('Statut de commande mis à jour.', 'success');
+        await refreshApp();
+        await openOrderDetail(numeroCommande);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    async function changeDeliveryStatus(idLivraison, statut) {
+      setLoading(true, 'Mise à jour de la livraison...');
+      try {
+        await callBackend('modifierStatutLivraison', idLivraison, statut);
+        showToast('Statut de livraison mis à jour.', 'success');
+        await refreshApp();
+        await openDeliveryDetail(idLivraison);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    async function markDelivered(idLivraison) {
+      if (!confirm('Confirmer que cette livraison a été effectuée ?')) return;
+
+      setLoading(true, 'Enregistrement de la livraison...');
+      try {
+        await callBackend('marquerLivraisonLivree', idLivraison);
+        showToast('Livraison marquée comme livrée.', 'success');
+        await refreshApp();
+        await openDeliveryDetail(idLivraison);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    // =========================================================
+    // LIVRAISON : CREATION
+    // =========================================================
+
+    function openCreateDelivery(numeroCommande) {
+      const c = state.selectedOrder;
+      if (!c) return;
+
+      setValue('deliveryOrderNumber', numeroCommande);
+      setValue('newDeliveryDate', c.dateLivraisonPrevue || todayISO());
+      setValue('newDeliveryPlace', c.lieuLivraison || '');
+      setValue('newDeliveryQty', (c.lignes || []).reduce((sum, l) => sum + Number(l.quantite || 0), 0));
+      setValue('newDeliveryAmount', Number(c.montantTotal || 0));
+
+      deliveryModal.show();
+    }
+
+    async function saveDelivery() {
+      const numeroCommande = getValue('deliveryOrderNumber');
+      const dateLivraison = getValue('newDeliveryDate');
+      const lieu = getValue('newDeliveryPlace');
+      const quantite = Number(getValue('newDeliveryQty') || 0);
+      const montant = Number(getValue('newDeliveryAmount') || 0);
+
+      if (!dateLivraison) {
+        showToast('La date de livraison est obligatoire.', 'warning');
+        return;
+      }
+
+      setLoading(true, 'Création de la livraison...');
+      try {
+        const result = await callBackend('creerLivraison', {
+          numeroCommande,
+          dateLivraison,
+          lieu,
+          quantite,
+          montant,
+          statut: 'À livrer'
+        });
+
+        deliveryModal.hide();
+        showToast(`Livraison ${result.idLivraison} créée.`, 'success');
+
+        await refreshApp();
+        await openOrderDetail(numeroCommande);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    // =========================================================
+    // PAIEMENT / MODIFICATION
+    // =========================================================
+
+    async function editPayment(numeroCommande, currentAmount) {
+      const value = prompt('Nouvel acompte en Ariary :', currentAmount);
+      if (value === null) return;
+
+      const amount = Number(String(value).replace(/\s/g, '').replace(',', '.'));
+
+      if (!Number.isFinite(amount) || amount < 0) {
+        showToast('Montant invalide.', 'warning');
+        return;
+      }
+
+      setLoading(true, 'Mise à jour du paiement...');
+      try {
+        await callBackend('modifierPaiement', numeroCommande, amount);
+        showToast('Paiement mis à jour.', 'success');
+        await refreshApp();
+        await openOrderDetail(numeroCommande);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    async function editOrderInfo(numeroCommande) {
+      const c = state.selectedOrder;
+      if (!c) return;
+
+      const client = prompt('Client :', c.client || '');
+      if (client === null) return;
+
+      const contact = prompt('Contact :', c.contact || '');
+      if (contact === null) return;
+
+      const lieuLivraison = prompt('Lieu de livraison :', c.lieuLivraison || '');
+      if (lieuLivraison === null) return;
+
+      const dateLivraisonPrevue = prompt(
+        'Date de livraison (AAAA-MM-JJ) :',
+        c.dateLivraisonPrevue || ''
+      );
+      if (dateLivraisonPrevue === null) return;
+
+      const numeroFacture = prompt('Numéro de facture :', c.numeroFacture || '');
+      if (numeroFacture === null) return;
+
+      const notes = prompt('Notes :', c.notes || '');
+      if (notes === null) return;
+
+      setLoading(true, 'Modification de la commande...');
+      try {
+        await callBackend('modifierCommande', {
+          numeroCommande,
+          client,
+          contact,
+          lieuLivraison,
+          dateLivraisonPrevue,
+          numeroFacture,
+          notes
+        });
+
+        showToast('Commande modifiée.', 'success');
+        await refreshApp();
+        await openOrderDetail(numeroCommande);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    async function deleteOrder(numeroCommande) {
+      const first = confirm(
+        `Supprimer définitivement ${numeroCommande} ?\n\nCette action supprimera aussi les produits et les livraisons associées.`
+      );
+      if (!first) return;
+
+      const second = prompt(`Tapez ${numeroCommande} pour confirmer la suppression :`);
+      if (second !== numeroCommande) {
+        showToast('Suppression annulée.', 'warning');
+        return;
+      }
+
+      setLoading(true, 'Suppression...');
+      try {
+        await callBackend('supprimerCommande', numeroCommande);
+        state.selectedOrder = null;
+        showToast('Commande supprimée.', 'success');
+        await refreshApp();
+        showScreen('orders');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    // =========================================================
+    // HISTORIQUE / FACTURE
+    // =========================================================
+
+    function renderHistory() {
+      const list = document.getElementById('historyList');
+      if (!list) return;
+
+      const history = state.commandes.filter(c =>
+        c.statut === 'Livrée' || c.statut === 'Annulée'
+      );
+
+      if (!history.length) {
+        list.innerHTML = emptyState('Aucun historique pour le moment.');
+        return;
+      }
+
+      list.innerHTML = history.map((c, i) => `
+        <div class="${i < history.length - 1 ? 'border-bottom pb-3 mb-3' : ''} clickable"
+             onclick="openOrderDetail('${esc(c.numeroCommande)}')">
+          <div class="d-flex justify-content-between gap-2">
+            <strong>${esc(c.numeroCommande)}</strong>
+            ${statusBadge(c.statut)}
+          </div>
+          <div class="small-muted">${esc(c.client || '')} · ${formatDate(c.date)}</div>
+          <div class="mt-2">${formatMoney(c.montantTotal)}</div>
+        </div>
+      `).join('');
+    }
+
+    async function openInvoice(numeroCommande) {
+      const c = state.selectedOrder && state.selectedOrder.numeroCommande === numeroCommande
+        ? state.selectedOrder
+        : await callBackend('getCommande', numeroCommande);
+
+      state.selectedOrder = c;
+
+      document.getElementById('invoiceContent').innerHTML = `
+        <div class="card app-card p-3">
+          <div class="small-muted">Commande</div>
+          <div class="fw-bold mb-3">${esc(c.numeroCommande)}</div>
+
+          <div class="small-muted">Client</div>
+          <div class="fw-semibold mb-3">${esc(c.client || '')}</div>
+
+          <div class="small-muted">Numéro de facture</div>
+          <div class="fw-bold mb-3">${esc(c.numeroFacture || 'Non renseigné')}</div>
+
+          <div class="small-muted">Montant</div>
+          <div class="fs-4 fw-bold mb-3">${formatMoney(c.montantTotal)}</div>
+
+          <div class="d-flex justify-content-between mb-2">
+            <span>Acompte</span><strong>${formatMoney(c.acompte)}</strong>
+          </div>
+          <div class="d-flex justify-content-between mb-3">
+            <span>Reste</span><strong>${formatMoney(c.reste)}</strong>
+          </div>
+
+          <div class="small-muted mb-3">
+            Cette version affiche les informations de facture enregistrées dans Google Sheets.
+          </div>
+
+          <button class="btn btn-outline-primary btn-app w-100" onclick="openOrderDetail('${esc(c.numeroCommande)}')">
+            <i class="bi bi-box-seam me-2"></i>Retour à la commande
+          </button>
+        </div>
+      `;
+
+      showScreen('invoice-info');
+    }
+
+    function openInvoiceFromLastOrder() {
+      if (state.commandes.length) {
+        openInvoice(state.commandes[0].numeroCommande);
+      } else {
+        showToast('Aucune commande disponible.', 'warning');
+      }
+    }
+
+    // =========================================================
+    // UI UTILITIES
+    // =========================================================
+
+    function statusBadge(status) {
+      const cls = {
+        'À préparer':'status-prep',
+        'En préparation':'status-progress',
+        'Prête':'status-ready',
+        'Livrée':'status-delivered',
+        'À livrer':'status-ready',
+        'En cours':'status-delivery',
+        'Annulée':'status-cancelled'
+      }[status] || 'status-prep';
+
+      return `<span class="status-badge ${cls}">${esc(status || 'Inconnu')}</span>`;
+    }
+
+    function timelineItem(title, text, active, last = false) {
+      return `
+        <div class="timeline-item ${last ? 'pb-0' : ''}" style="${active ? '' : 'opacity:.45'}">
+          <strong>${esc(title)}</strong>
+          <div class="small-muted">${esc(text || 'À venir')}</div>
+        </div>
+      `;
+    }
+
+    function emptyState(text) {
+      return `
+        <div class="empty-state">
+          <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+          ${esc(text)}
+        </div>
+      `;
+    }
+
+    function setLoading(show, text = 'Chargement...') {
+      const overlay = document.getElementById('loadingOverlay');
+      const label = document.getElementById('loadingText');
+      if (label) label.textContent = text;
+      if (overlay) overlay.classList.toggle('show', !!show);
+    }
+
+    function showToast(message, type = 'info') {
+      const toast = document.getElementById('appToast');
+      const body = document.getElementById('toastBody');
+      const headerIcon = toast.querySelector('.toast-header i');
+
+      body.textContent = message;
+
+      toast.classList.remove('text-bg-success','text-bg-danger','text-bg-warning','text-bg-info');
+      if (type === 'success') toast.classList.add('text-bg-success');
+      if (type === 'danger') toast.classList.add('text-bg-danger');
+      if (type === 'warning') toast.classList.add('text-bg-warning');
+      if (type === 'info') toast.classList.add('text-bg-info');
+
+      headerIcon.className =
+        type === 'success' ? 'bi bi-check-circle me-2' :
+        type === 'danger' ? 'bi bi-exclamation-triangle me-2' :
+        type === 'warning' ? 'bi bi-exclamation-circle me-2' :
+        'bi bi-info-circle me-2';
+
+      bootstrap.Toast.getOrCreateInstance(toast, { delay: 3500 }).show();
+    }
+
+    function formatMoney(value) {
+      const number = Number(value || 0);
+      return new Intl.NumberFormat('fr-FR').format(number) + ' Ar';
+    }
+
+    function formatNumber(value) {
+      return new Intl.NumberFormat('fr-FR').format(Number(value || 0));
+    }
+
+    function formatDate(value) {
+      if (!value) return 'Date non renseignée';
+
+      const text = String(value);
+      const date = new Date(
+        /^\d{4}-\d{2}-\d{2}$/.test(text) ? text + 'T00:00:00' : text
+      );
+
+      if (isNaN(date.getTime())) return text;
+
+      return new Intl.DateTimeFormat('fr-FR', {
+        day:'2-digit', month:'2-digit', year:'numeric'
+      }).format(date);
+    }
+
+    function formatDateTime(value) {
+      if (!value) return 'Date non renseignée';
+
+      const date = new Date(value);
+      if (isNaN(date.getTime())) return String(value);
+
+      return new Intl.DateTimeFormat('fr-FR', {
+        day:'2-digit', month:'2-digit', year:'numeric',
+        hour:'2-digit', minute:'2-digit'
+      }).format(date);
+    }
+
+    function todayISO() {
+      const d = new Date();
+      d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+      return d.toISOString().slice(0,10);
+    }
+
+    function setText(id, value) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value;
+    }
+
+    function setValue(id, value) {
+      const el = document.getElementById(id);
+      if (el) el.value = value ?? '';
+    }
+
+    function getValue(id) {
+      return document.getElementById(id)?.value ?? '';
+    }
+
+    function esc(value) {
+      return String(value ?? '')
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;')
+        .replace(/'/g,'&#039;');
+    }
+  </script>
+</body>
+</html>

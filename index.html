@@ -1,6 +1,11 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#212529">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0d6efd">
@@ -1533,5 +1538,18 @@
         .replace(/'/g,'&#039;');
     }
   </script>
+  <script>
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+        navigator.serviceWorker.register('/sw.js')
+            .then(function() {
+                console.log('OUALDECO PWA activée');
+            })
+            .catch(function(error) {
+                console.error('Erreur PWA :', error);
+            });
+    });
+}
+</script>
 </body>
 </html>

@@ -564,8 +564,33 @@
     document.head.appendChild(script);
   });
 }
-    alert('CALLBACKEND EXISTE : ' + (typeof callBackend));
-  async function refreshApp() {
+
+async function callBackend(functionName, ...args) {
+  try {
+    const result = await serverCall(functionName, ...args);
+
+    if (!result || result.ok !== true) {
+      throw new Error(
+        result && result.message
+          ? result.message
+          : 'Erreur inconnue.'
+      );
+    }
+
+    return result.data;
+
+  } catch (error) {
+    showToast(
+      error.message || 'Une erreur est survenue.',
+      'danger'
+    );
+    throw error;
+  }
+}
+
+alert('CALLBACKEND EXISTE : ' + (typeof callBackend));
+
+async function refreshApp() {
   alert('3 - REFRESH APP DÉMARRÉ');
 
   setLoading(true, 'Synchronisation avec Google Sheets...');

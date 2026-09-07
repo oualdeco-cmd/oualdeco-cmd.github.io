@@ -521,7 +521,15 @@
 
         script.onerror = function() {
           cleanup();
-          reject(new Error('Impossible de contacter l\'API OUALDECO. Vérifiez le déploiement Apps Script.'));
+
+          alert(
+            'ERREUR API OUALDECO\n\n' +
+            'Fonction : ' + functionName + '\n' +
+            'URL appelée :\n' + script.src
+  );
+
+  reject(new Error('Erreur de chargement API'));
+};
         };
 
         const params = new URLSearchParams();
@@ -530,6 +538,7 @@
         params.set('payload', JSON.stringify(args));
 
         script.src = API_URL + '?' + params.toString();
+        console.log('OUALDECO API URL :', script.src);
         document.head.appendChild(script);
       });
     }

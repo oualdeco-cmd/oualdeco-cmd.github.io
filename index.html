@@ -565,6 +565,7 @@
   });
 }
     async function refreshApp() {
+      alert('3 - REFRESH APP DÉMARRÉ');
       setLoading(true, 'Synchronisation avec Google Sheets...');
       try {
         const [dashboard, commandes, livraisons] = await Promise.all([

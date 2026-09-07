@@ -564,45 +564,63 @@
     document.head.appendChild(script);
   });
 }
-    async function refreshApp() {
-      alert('3 - REFRESH APP DÉMARRÉ');
-      setLoading(true, 'Synchronisation avec Google Sheets...');
-      try {
-        const [dashboard, commandes, livraisons] = await Promise.all([
-          callBackend('getDashboard'),
-          callBackend('getCommandes'),
-          callBackend('getLivraisons')
-        ]);
+  async function refreshApp() {
+  alert('3 - REFRESH APP DÉMARRÉ');
 
-        state.dashboard = dashboard;
-        state.commandes = commandes || [];
-        state.livraisons = livraisons || [];
+  setLoading(true, 'Synchronisation avec Google Sheets...');
 
-        renderDashboard();
-        renderOrders();
-        renderDeliveries();
-        renderHistory();
+  try {
+    alert('4 - AVANT LES 3 APPELS API');
 
-        if (state.selectedOrder) {
-          const exists = state.commandes.some(c =>
-            String(c.numeroCommande) === String(state.selectedOrder.numeroCommande)
-          );
-          if (exists) await openOrderDetail(state.selectedOrder.numeroCommande, false);
-        }
+    const [dashboard, commandes, livraisons] = await Promise.all([
+      callBackend('getDashboard'),
+      callBackend('getCommandes'),
+      callBackend('getLivraisons')
+    ]);
 
-        if (state.selectedDelivery) {
-          const exists = state.livraisons.some(l =>
-            String(l.idLivraison) === String(state.selectedDelivery.idLivraison)
-          );
-          if (exists) await openDeliveryDetail(state.selectedDelivery.idLivraison, false);
-        }
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
+    alert('5 - LES 3 APPELS API ONT RÉPONDU');
+
+    state.dashboard = dashboard;
+    state.commandes = commandes || [];
+    state.livraisons = livraisons || [];
+
+    renderDashboard();
+    renderOrders();
+    renderDeliveries();
+    renderHistory();
+
+    if (state.selectedOrder) {
+      const exists = state.commandes.some(c =>
+        String(c.numeroCommande) === String(state.selectedOrder.numeroCommande)
+      );
+
+      if (exists) {
+        await openOrderDetail(state.selectedOrder.numeroCommande, false);
       }
     }
 
+    if (state.selectedDelivery) {
+      const exists = state.livraisons.some(l =>
+        String(l.idLivraison) === String(state.selectedDelivery.idLivraison)
+      );
+
+      if (exists) {
+        await openDeliveryDetail(state.selectedDelivery.idLivraison, false);
+      }
+    }
+
+  } catch (e) {
+    alert(
+      'ERREUR DANS REFRESH APP\n\n' +
+      'Message : ' + (e.message || e)
+    );
+
+    console.error(e);
+
+  } finally {
+    setLoading(false);
+  }
+}
     // =========================================================
     // NAVIGATION
     // =========================================================

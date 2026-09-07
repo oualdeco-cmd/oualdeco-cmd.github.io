@@ -483,11 +483,17 @@
 
     let deliveryModal;
 
-    document.addEventListener('DOMContentLoaded', () => {
-      deliveryModal = new bootstrap.Modal(document.getElementById('deliveryModal'));
-      resetNewOrderForm();
-      refreshApp();
-    });
+   document.addEventListener('DOMContentLoaded', () => {
+
+  alert('1 - APPLICATION CHARGÉE');
+
+  deliveryModal = new bootstrap.Modal(document.getElementById('deliveryModal'));
+  resetNewOrderForm();
+
+  alert('2 - AVANT REFRESH APP');
+
+  refreshApp();
+});
 
     // =========================================================
     // API GOOGLE APPS SCRIPT

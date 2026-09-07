@@ -483,17 +483,11 @@
 
     let deliveryModal;
 
-   document.addEventListener('DOMContentLoaded', () => {
-
-  alert('1 - APPLICATION CHARGÉE');
-
-  deliveryModal = new bootstrap.Modal(document.getElementById('deliveryModal'));
-  resetNewOrderForm();
-
-  alert('2 - AVANT REFRESH APP');
-
-  refreshApp();
-});
+    document.addEventListener('DOMContentLoaded', () => {
+      deliveryModal = new bootstrap.Modal(document.getElementById('deliveryModal'));
+      resetNewOrderForm();
+      refreshApp();
+    });
 
     // =========================================================
     // API GOOGLE APPS SCRIPT
@@ -506,147 +500,93 @@
     let jsonpCounter = 0;
 
     function serverCall(functionName, ...args) {
-  return new Promise((resolve, reject) => {
-    const callbackName = '__oualdeco_jsonp_' + Date.now() + '_' + (++jsonpCounter);
-    const script = document.createElement('script');
+      return new Promise((resolve, reject) => {
+        const callbackName = '__oualdeco_jsonp_' + Date.now() + '_' + (++jsonpCounter);
+        const script = document.createElement('script');
+        const timeout = setTimeout(() => {
+          cleanup();
+          reject(new Error('Le serveur Google Apps Script ne répond pas.'));
+        }, 30000);
 
-    const timeout = setTimeout(() => {
-      cleanup();
-      reject(new Error('Le serveur Google Apps Script ne répond pas.'));
-    }, 30000);
+        function cleanup() {
+          clearTimeout(timeout);
+          try { delete window[callbackName]; } catch (e) { window[callbackName] = undefined; }
+          if (script.parentNode) script.parentNode.removeChild(script);
+        }
 
-    function cleanup() {
-      clearTimeout(timeout);
+        window[callbackName] = function(result) {
+          cleanup();
+          resolve(result);
+        };
+
+        script.onerror = function() {
+          cleanup();
+          reject(new Error('Impossible de contacter l\'API OUALDECO. Vérifiez le déploiement Apps Script.'));
+        };
+
+        const params = new URLSearchParams();
+        params.set('action', functionName);
+        params.set('callback', callbackName);
+        params.set('payload', JSON.stringify(args));
+
+        script.src = API_URL + '?' + params.toString();
+        document.head.appendChild(script);
+      });
+    }
+
+    async function callBackend(functionName, ...args) {
       try {
-        delete window[callbackName];
+        const result = await serverCall(functionName, ...args);
+
+        if (!result || result.ok !== true) {
+          throw new Error(result && result.message ? result.message : 'Erreur inconnue.');
+        }
+
+        return result.data;
+      } catch (error) {
+        showToast(error.message || 'Une erreur est survenue.', 'danger');
+        throw error;
+      }
+    }
+
+    async function refreshApp() {
+      setLoading(true, 'Synchronisation avec Google Sheets...');
+      try {
+        const [dashboard, commandes, livraisons] = await Promise.all([
+          callBackend('getDashboard'),
+          callBackend('getCommandes'),
+          callBackend('getLivraisons')
+        ]);
+
+        state.dashboard = dashboard;
+        state.commandes = commandes || [];
+        state.livraisons = livraisons || [];
+
+        renderDashboard();
+        renderOrders();
+        renderDeliveries();
+        renderHistory();
+
+        if (state.selectedOrder) {
+          const exists = state.commandes.some(c =>
+            String(c.numeroCommande) === String(state.selectedOrder.numeroCommande)
+          );
+          if (exists) await openOrderDetail(state.selectedOrder.numeroCommande, false);
+        }
+
+        if (state.selectedDelivery) {
+          const exists = state.livraisons.some(l =>
+            String(l.idLivraison) === String(state.selectedDelivery.idLivraison)
+          );
+          if (exists) await openDeliveryDetail(state.selectedDelivery.idLivraison, false);
+        }
       } catch (e) {
-        window[callbackName] = undefined;
-      }
-
-      if (script.parentNode) {
-        script.parentNode.removeChild(script);
+        console.error(e);
+      } finally {
+        setLoading(false);
       }
     }
 
-    window[callbackName] = function(result) {
-      console.log('OUALDECO API RESPONSE :', result);
-
-      alert(
-        'REPONSE API RECUE\n\n' +
-        JSON.stringify(result, null, 2)
-      );
-
-      cleanup();
-      resolve(result);
-    };
-
-    script.onerror = function() {
-      cleanup();
-
-      alert(
-        'ERREUR API OUALDECO\n\n' +
-        'Fonction : ' + functionName + '\n' +
-        'URL appelée :\n' + script.src
-      );
-
-      reject(new Error('Erreur de chargement API'));
-    };
-
-    const params = new URLSearchParams();
-    params.set('action', functionName);
-    params.set('callback', callbackName);
-    params.set('payload', JSON.stringify(args));
-
-    script.src = API_URL + '?' + params.toString();
-
-    console.log('OUALDECO API URL :', script.src);
-
-    document.head.appendChild(script);
-  });
-}
-
-async function callBackend(functionName, ...args) {
-  try {
-    const result = await serverCall(functionName, ...args);
-
-    if (!result || result.ok !== true) {
-      throw new Error(
-        result && result.message
-          ? result.message
-          : 'Erreur inconnue.'
-      );
-    }
-
-    return result.data;
-
-  } catch (error) {
-    showToast(
-      error.message || 'Une erreur est survenue.',
-      'danger'
-    );
-    throw error;
-  }
-}
-
-alert('CALLBACKEND EXISTE : ' + (typeof callBackend));
-
-async function refreshApp() {
-  alert('3 - REFRESH APP DÉMARRÉ');
-
-  setLoading(true, 'Synchronisation avec Google Sheets...');
-
-  try {
-    alert('4 - AVANT LES 3 APPELS API');
-
-    const [dashboard, commandes, livraisons] = await Promise.all([
-      callBackend('getDashboard'),
-      callBackend('getCommandes'),
-      callBackend('getLivraisons')
-    ]);
-
-    alert('5 - LES 3 APPELS API ONT RÉPONDU');
-
-    state.dashboard = dashboard;
-    state.commandes = commandes || [];
-    state.livraisons = livraisons || [];
-
-    renderDashboard();
-    renderOrders();
-    renderDeliveries();
-    renderHistory();
-
-    if (state.selectedOrder) {
-      const exists = state.commandes.some(c =>
-        String(c.numeroCommande) === String(state.selectedOrder.numeroCommande)
-      );
-
-      if (exists) {
-        await openOrderDetail(state.selectedOrder.numeroCommande, false);
-      }
-    }
-
-    if (state.selectedDelivery) {
-      const exists = state.livraisons.some(l =>
-        String(l.idLivraison) === String(state.selectedDelivery.idLivraison)
-      );
-
-      if (exists) {
-        await openDeliveryDetail(state.selectedDelivery.idLivraison, false);
-      }
-    }
-
-  } catch (e) {
-    alert(
-      'ERREUR DANS REFRESH APP\n\n' +
-      'Message : ' + (e.message || e)
-    );
-
-    console.error(e);
-
-  } finally {
-    setLoading(false);
-  }
-}
     // =========================================================
     // NAVIGATION
     // =========================================================

@@ -500,72 +500,64 @@
     let jsonpCounter = 0;
 
     function serverCall(functionName, ...args) {
-      return new Promise((resolve, reject) => {
-        const callbackName = '__oualdeco_jsonp_' + Date.now() + '_' + (++jsonpCounter);
-        const script = document.createElement('script');
-        const timeout = setTimeout(() => {
-          cleanup();
-          reject(new Error('Le serveur Google Apps Script ne répond pas.'));
-        }, 30000);
+  return new Promise((resolve, reject) => {
+    const callbackName = '__oualdeco_jsonp_' + Date.now() + '_' + (++jsonpCounter);
+    const script = document.createElement('script');
 
-        function cleanup() {
-          clearTimeout(timeout);
-          try { delete window[callbackName]; } catch (e) { window[callbackName] = undefined; }
-          if (script.parentNode) script.parentNode.removeChild(script);
-        }
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error('Le serveur Google Apps Script ne répond pas.'));
+    }, 30000);
 
-        window[callbackName] = function(result) {
-        console.log('OUALDECO API RESPONSE :', result);
-      
-        alert(
-          'REPONSE API RECUE\n\n' +
-          JSON.stringify(result, null, 2)
-        );
-      
-        cleanup();
-        resolve(result);
-      
-        };
-
-        script.onerror = function() {
-          cleanup();
-
-          alert(
-            'ERREUR API OUALDECO\n\n' +
-            'Fonction : ' + functionName + '\n' +
-            'URL appelée :\n' + script.src
-  );
-
-  reject(new Error('Erreur de chargement API'));
-};
-        };
-
-        const params = new URLSearchParams();
-        params.set('action', functionName);
-        params.set('callback', callbackName);
-        params.set('payload', JSON.stringify(args));
-
-        script.src = API_URL + '?' + params.toString();
-        console.log('OUALDECO API URL :', script.src);
-        document.head.appendChild(script);
-      });
-    }
-
-    async function callBackend(functionName, ...args) {
+    function cleanup() {
+      clearTimeout(timeout);
       try {
-        const result = await serverCall(functionName, ...args);
+        delete window[callbackName];
+      } catch (e) {
+        window[callbackName] = undefined;
+      }
 
-        if (!result || result.ok !== true) {
-          throw new Error(result && result.message ? result.message : 'Erreur inconnue.');
-        }
-
-        return result.data;
-      } catch (error) {
-        showToast(error.message || 'Une erreur est survenue.', 'danger');
-        throw error;
+      if (script.parentNode) {
+        script.parentNode.removeChild(script);
       }
     }
 
+    window[callbackName] = function(result) {
+      console.log('OUALDECO API RESPONSE :', result);
+
+      alert(
+        'REPONSE API RECUE\n\n' +
+        JSON.stringify(result, null, 2)
+      );
+
+      cleanup();
+      resolve(result);
+    };
+
+    script.onerror = function() {
+      cleanup();
+
+      alert(
+        'ERREUR API OUALDECO\n\n' +
+        'Fonction : ' + functionName + '\n' +
+        'URL appelée :\n' + script.src
+      );
+
+      reject(new Error('Erreur de chargement API'));
+    };
+
+    const params = new URLSearchParams();
+    params.set('action', functionName);
+    params.set('callback', callbackName);
+    params.set('payload', JSON.stringify(args));
+
+    script.src = API_URL + '?' + params.toString();
+
+    console.log('OUALDECO API URL :', script.src);
+
+    document.head.appendChild(script);
+  });
+}
     async function refreshApp() {
       setLoading(true, 'Synchronisation avec Google Sheets...');
       try {

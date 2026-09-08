@@ -478,15 +478,324 @@
       currentFilter: 'all',
       currentDeliveryFilter: 'all',
       selectedOrder: null,
-      selectedDelivery: null
+      selectedDelivery: null,
+
+      // État local / synchronisation
+      online: navigator.onLine,
+      syncing: false,
+      lastSync: null
     };
 
     let deliveryModal;
 
-    document.addEventListener('DOMContentLoaded', () => {
+    // =========================================================
+    // BASE LOCALE INDEXEDDB
+    // =========================================================
+
+    const LOCAL_DB_NAME = 'oualdecoDB';
+    const LOCAL_DB_VERSION = 2;
+    let localDB = null;
+
+    function openLocalDB() {
+      return new Promise((resolve, reject) => {
+        if (localDB) {
+          resolve(localDB);
+          return;
+        }
+
+        if (!('indexedDB' in window)) {
+          reject(new Error("IndexedDB n'est pas disponible sur cet appareil."));
+          return;
+        }
+
+        const request = indexedDB.open(LOCAL_DB_NAME, LOCAL_DB_VERSION);
+
+        request.onerror = function() {
+          console.error('Erreur ouverture IndexedDB :', request.error);
+          reject(request.error);
+        };
+
+        request.onsuccess = function() {
+          localDB = request.result;
+          console.log('OUALDECO : base locale ouverte');
+          resolve(localDB);
+        };
+
+        request.onupgradeneeded = function(event) {
+          const db = event.target.result;
+
+          if (!db.objectStoreNames.contains('commandes')) {
+            db.createObjectStore('commandes', { keyPath: 'numeroCommande' });
+          }
+
+          if (!db.objectStoreNames.contains('livraisons')) {
+            db.createObjectStore('livraisons', { keyPath: 'idLivraison' });
+          }
+
+          if (!db.objectStoreNames.contains('dashboard')) {
+            db.createObjectStore('dashboard', { keyPath: 'id' });
+          }
+
+          // Préparé pour la prochaine étape : opérations hors ligne.
+          if (!db.objectStoreNames.contains('syncQueue')) {
+            db.createObjectStore('syncQueue', { keyPath: 'id', autoIncrement: true });
+          }
+
+          if (!db.objectStoreNames.contains('commandeDetails')) {
+            db.createObjectStore('commandeDetails', { keyPath: 'numeroCommande' });
+          }
+
+          if (!db.objectStoreNames.contains('livraisonDetails')) {
+            db.createObjectStore('livraisonDetails', { keyPath: 'idLivraison' });
+          }
+
+          console.log('OUALDECO : structure IndexedDB créée');
+        };
+      });
+    }
+
+    function localPut(storeName, data) {
+      return openLocalDB().then(db => new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readwrite');
+        const request = tx.objectStore(storeName).put(data);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      }));
+    }
+
+    function localPutMany(storeName, items) {
+      return openLocalDB().then(db => new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        items.forEach(item => store.put(item));
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      }));
+    }
+
+    function localGet(storeName, key) {
+      return openLocalDB().then(db => new Promise((resolve, reject) => {
+        const request = db.transaction(storeName, 'readonly')
+          .objectStore(storeName).get(key);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      }));
+    }
+
+    function localGetAll(storeName) {
+      return openLocalDB().then(db => new Promise((resolve, reject) => {
+        const request = db.transaction(storeName, 'readonly')
+          .objectStore(storeName).getAll();
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror = () => reject(request.error);
+      }));
+    }
+
+    function localClear(storeName) {
+      return openLocalDB().then(db => new Promise((resolve, reject) => {
+        const request = db.transaction(storeName, 'readwrite')
+          .objectStore(storeName).clear();
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+      }));
+    }
+
+    async function queueOperation(action, args) {
+      const operation = {
+        action,
+        args,
+        createdAt: Date.now(),
+        operationId: 'OP-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9)
+      };
+      const id = await localPut('syncQueue', operation);
+      console.log('OUALDECO : opération mise en attente', operation.action, id);
+      return id;
+    }
+
+    async function getQueuedOperations() {
+      const items = await localGetAll('syncQueue');
+      return (items || []).sort((a, b) => Number(a.id || 0) - Number(b.id || 0));
+    }
+
+    async function deleteQueuedOperation(id) {
+      return openLocalDB().then(db => new Promise((resolve, reject) => {
+        const tx = db.transaction('syncQueue', 'readwrite');
+        const request = tx.objectStore('syncQueue').delete(id);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+      }));
+    }
+
+    async function getPendingCount() {
+      try { return (await getQueuedOperations()).length; } catch (e) { return 0; }
+    }
+
+    function calculateDashboardLocal() {
+      const commandes = state.commandes || [];
+      const livraisons = state.livraisons || [];
+      const stats = {
+        commandesTotal: commandes.length,
+        commandesAPreparer: commandes.filter(c => c.statut === 'À préparer').length,
+        commandesEnPreparation: commandes.filter(c => c.statut === 'En préparation').length,
+        commandesPretes: commandes.filter(c => c.statut === 'Prête').length,
+        commandesLivrees: commandes.filter(c => c.statut === 'Livrée').length,
+        commandesAnnulees: commandes.filter(c => c.statut === 'Annulée').length,
+        livraisonsTotal: livraisons.length,
+        livraisonsALivrer: livraisons.filter(l => l.statut === 'À livrer').length,
+        livraisonsEnCours: livraisons.filter(l => l.statut === 'En cours').length,
+        livraisonsLivrees: livraisons.filter(l => l.statut === 'Livrée').length,
+        chiffreAffaires: commandes.reduce((t, c) => t + Number(c.montantTotal || 0), 0),
+        acomptes: commandes.reduce((t, c) => t + Number(c.acompte || 0), 0),
+        resteAEncaisser: commandes.reduce((t, c) => t + Number(c.reste || 0), 0)
+      };
+      const prochainesLivraisons = livraisons
+        .filter(l => l.statut !== 'Livrée' && l.statut !== 'Annulée')
+        .sort((a,b) => String(a.dateLivraison).localeCompare(String(b.dateLivraison)))
+        .slice(0,5);
+      state.dashboard = { stats, prochainesLivraisons, dernieresCommandes: commandes.slice(0,5) };
+      return state.dashboard;
+    }
+
+    async function saveCachedDetails() {
+      if (state.selectedOrder && state.selectedOrder.numeroCommande) {
+        await localPut('commandeDetails', state.selectedOrder);
+      }
+      if (state.selectedDelivery && state.selectedDelivery.idLivraison) {
+        await localPut('livraisonDetails', state.selectedDelivery);
+      }
+    }
+
+    async function syncPendingOperations() {
+      if (!navigator.onLine || state.syncing) return;
+      const operations = await getQueuedOperations();
+      if (!operations.length) return;
+
+      state.syncing = true;
+      setLoading(true, `Synchronisation de ${operations.length} opération(s)...`);
+      try {
+        for (const operation of operations) {
+          if (!navigator.onLine) break;
+          try {
+            await callBackend(operation.action, ...(operation.args || []), true);
+            await deleteQueuedOperation(operation.id);
+          } catch (error) {
+            console.error('Échec opération hors ligne', operation, error);
+            showToast(`Synchronisation interrompue : ${error.message}`, 'warning');
+            break;
+          }
+        }
+      } finally {
+        state.syncing = false;
+        setLoading(false);
+      }
+    }
+
+    function findLocalOrder(numeroCommande) {
+      return (state.commandes || []).find(c => String(c.numeroCommande) === String(numeroCommande)) || null;
+    }
+
+    function findLocalDelivery(idLivraison) {
+      return (state.livraisons || []).find(l => String(l.idLivraison) === String(idLivraison)) || null;
+    }
+
+    async function applyLocalMutation(action, args, mutate) {
+      mutate();
+      calculateDashboardLocal();
+      await saveLocalData(state.dashboard, state.commandes, state.livraisons);
+      await saveCachedDetails();
+      await queueOperation(action, args);
+      renderDashboard(); renderOrders(); renderDeliveries(); renderHistory();
+    }
+
+    async function loadLocalData() {
+      try {
+        await openLocalDB();
+
+        const [commandes, livraisons, dashboard] = await Promise.all([
+          localGetAll('commandes'),
+          localGetAll('livraisons'),
+          localGet('dashboard', 'main')
+        ]);
+
+        state.commandes = commandes || [];
+        state.livraisons = livraisons || [];
+        state.dashboard = dashboard ? dashboard.data : null;
+        state.lastSync = dashboard ? dashboard.savedAt : null;
+
+        console.log('OUALDECO : données locales chargées', {
+          commandes: state.commandes.length,
+          livraisons: state.livraisons.length,
+          dashboard: !!state.dashboard
+        });
+
+        return true;
+      } catch (error) {
+        console.error('Impossible de charger les données locales :', error);
+        return false;
+      }
+    }
+
+    async function saveLocalData(dashboard, commandes, livraisons) {
+      try {
+        await openLocalDB();
+
+        if (Array.isArray(commandes)) {
+          await localClear('commandes');
+          if (commandes.length) await localPutMany('commandes', commandes);
+        }
+
+        if (Array.isArray(livraisons)) {
+          await localClear('livraisons');
+          if (livraisons.length) await localPutMany('livraisons', livraisons);
+        }
+
+        if (dashboard) {
+          await localPut('dashboard', {
+            id: 'main',
+            data: dashboard,
+            savedAt: Date.now()
+          });
+        }
+
+        state.lastSync = Date.now();
+        console.log('OUALDECO : données sauvegardées localement');
+      } catch (error) {
+        console.error('Erreur sauvegarde locale :', error);
+      }
+    }
+
+    function updateConnectionState() {
+      state.online = navigator.onLine;
+      console.log('OUALDECO : connexion', state.online ? 'en ligne' : 'hors ligne');
+
+      if (state.online) {
+        refreshApp();
+      }
+    }
+
+    window.addEventListener('online', updateConnectionState);
+    window.addEventListener('offline', updateConnectionState);
+
+    document.addEventListener('DOMContentLoaded', async () => {
       deliveryModal = new bootstrap.Modal(document.getElementById('deliveryModal'));
       resetNewOrderForm();
-      refreshApp();
+
+      // 1. Ouvrir la base locale.
+      await openLocalDB();
+
+      // 2. Charger les données locales immédiatement.
+      await loadLocalData();
+
+      // 3. Afficher l'application sans attendre Google Sheets.
+      renderDashboard();
+      renderOrders();
+      renderDeliveries();
+      renderHistory();
+
+      // 4. Si Internet est disponible, synchroniser en arrière-plan.
+      if (navigator.onLine) {
+        refreshApp();
+      }
     });
 
     // =========================================================
@@ -535,54 +844,59 @@
     }
 
     async function callBackend(functionName, ...args) {
+      let silent = false;
+      if (args.length && args[args.length - 1] === true) {
+        silent = true;
+        args.pop();
+      }
       try {
         const result = await serverCall(functionName, ...args);
-
         if (!result || result.ok !== true) {
           throw new Error(result && result.message ? result.message : 'Erreur inconnue.');
         }
-
         return result.data;
       } catch (error) {
-        showToast(error.message || 'Une erreur est survenue.', 'danger');
+        if (!silent) showToast(error.message || 'Une erreur est survenue.', 'danger');
         throw error;
       }
     }
 
     async function refreshApp() {
-      setLoading(true, 'Synchronisation avec Google Sheets...');
+      if (!navigator.onLine) {
+        state.online = false;
+        await loadLocalData();
+        calculateDashboardLocal();
+        renderDashboard(); renderOrders(); renderDeliveries(); renderHistory();
+        return;
+      }
+
+      state.online = true;
       try {
+        await syncPendingOperations();
+        const pending = await getPendingCount();
+        if (pending > 0) return;
+
+        state.syncing = true;
+        setLoading(true, 'Synchronisation avec Google Sheets...');
         const [dashboard, commandes, livraisons] = await Promise.all([
-          callBackend('getDashboard'),
-          callBackend('getCommandes'),
-          callBackend('getLivraisons')
+          callBackend('getDashboard', true),
+          callBackend('getCommandes', true),
+          callBackend('getLivraisons', true)
         ]);
 
         state.dashboard = dashboard;
         state.commandes = commandes || [];
         state.livraisons = livraisons || [];
+        await saveLocalData(state.dashboard, state.commandes, state.livraisons);
 
-        renderDashboard();
-        renderOrders();
-        renderDeliveries();
-        renderHistory();
-
-        if (state.selectedOrder) {
-          const exists = state.commandes.some(c =>
-            String(c.numeroCommande) === String(state.selectedOrder.numeroCommande)
-          );
-          if (exists) await openOrderDetail(state.selectedOrder.numeroCommande, false);
-        }
-
-        if (state.selectedDelivery) {
-          const exists = state.livraisons.some(l =>
-            String(l.idLivraison) === String(state.selectedDelivery.idLivraison)
-          );
-          if (exists) await openDeliveryDetail(state.selectedDelivery.idLivraison, false);
-        }
+        renderDashboard(); renderOrders(); renderDeliveries(); renderHistory();
       } catch (e) {
-        console.error(e);
+        console.error('Synchronisation échouée, conservation des données locales.', e);
+        await loadLocalData();
+        calculateDashboardLocal();
+        renderDashboard(); renderOrders(); renderDeliveries(); renderHistory();
       } finally {
+        state.syncing = false;
         setLoading(false);
       }
     }
@@ -761,13 +1075,20 @@
     async function openOrderDetail(numeroCommande, navigate = true) {
       setLoading(true, 'Chargement de la commande...');
       try {
-        const data = await callBackend('getCommande', numeroCommande);
-        state.selectedOrder = data;
-        renderOrderDetail(data);
+        let data = await localGet('commandeDetails', numeroCommande);
+        if (!data) data = findLocalOrder(numeroCommande);
+        if (data) { state.selectedOrder = data; renderOrderDetail(data); }
+        if (navigator.onLine) {
+          try {
+            data = await callBackend('getCommande', numeroCommande, true);
+            state.selectedOrder = data;
+            await localPut('commandeDetails', data);
+            renderOrderDetail(data);
+          } catch (e) { if (!data) throw e; }
+        }
+        if (!data) throw new Error('Commande introuvable localement.');
         if (navigate) showScreen('order-detail');
-      } finally {
-        setLoading(false);
-      }
+      } finally { setLoading(false); }
     }
 
     function renderOrderDetail(c) {
@@ -936,13 +1257,20 @@
     async function openDeliveryDetail(idLivraison, navigate = true) {
       setLoading(true, 'Chargement de la livraison...');
       try {
-        const data = await callBackend('getLivraison', idLivraison);
-        state.selectedDelivery = data;
-        renderDeliveryDetail(data);
+        let data = await localGet('livraisonDetails', idLivraison);
+        if (!data) data = findLocalDelivery(idLivraison);
+        if (data) { state.selectedDelivery = data; renderDeliveryDetail(data); }
+        if (navigator.onLine) {
+          try {
+            data = await callBackend('getLivraison', idLivraison, true);
+            state.selectedDelivery = data;
+            await localPut('livraisonDetails', data);
+            renderDeliveryDetail(data);
+          } catch (e) { if (!data) throw e; }
+        }
+        if (!data) throw new Error('Livraison introuvable localement.');
         if (navigate) showScreen('delivery-detail');
-      } finally {
-        setLoading(false);
-      }
+      } finally { setLoading(false); }
     }
 
     function renderDeliveryDetail(l) {
@@ -1115,22 +1443,33 @@
       setLoading(true, 'Enregistrement de la commande...');
 
       try {
-        const result = await callBackend('enregistrerCommande', {
-          client,
-          contact,
-          lieuLivraison,
-          dateLivraisonPrevue,
-          acompte,
-          numeroFacture,
-          notes,
-          lignes
-        });
+        const data = { client, contact, lieuLivraison, dateLivraisonPrevue, acompte, numeroFacture, notes, lignes };
+        const total = Math.round(lignes.reduce((sum, l) => sum + l.quantite * l.prixUnitaire, 0) * 100) / 100;
+        const localId = 'CMD' + new Date().getFullYear() + String(Date.now()).slice(-8);
+        const localOrder = {
+          numeroCommande: localId, date: new Date().toISOString(), client, contact, lieuLivraison,
+          montantTotal: total, acompte, reste: Math.max(0, total - acompte), statut: 'À préparer',
+          dateLivraisonPrevue, numeroFacture, notes, lignes, livraisons: [], nombreProduits: lignes.length
+        };
 
-        showToast(`Commande ${result.numeroCommande} enregistrée.`, 'success');
+        if (navigator.onLine) {
+          const result = await callBackend('enregistrerCommande', { ...data, numeroCommande: localId });
+          localOrder.numeroCommande = result.numeroCommande || localId;
+          state.commandes.unshift(localOrder);
+          state.selectedOrder = localOrder;
+          await localPut('commandeDetails', localOrder);
+          await saveLocalData(calculateDashboardLocal(), state.commandes, state.livraisons);
+          showToast(`Commande ${localOrder.numeroCommande} enregistrée.`, 'success');
+        } else {
+          state.commandes.unshift(localOrder);
+          state.selectedOrder = localOrder;
+          await applyLocalMutation('enregistrerCommande', [{ ...data, numeroCommande: localId }], () => {});
+          showToast(`Commande ${localId} enregistrée hors ligne. Elle sera synchronisée automatiquement.`, 'success');
+        }
 
         resetNewOrderForm();
-        await refreshApp();
-        await openOrderDetail(result.numeroCommande);
+        renderDashboard(); renderOrders(); renderHistory();
+        await openOrderDetail(localOrder.numeroCommande);
       } catch (e) {
         console.error(e);
       } finally {
@@ -1149,9 +1488,15 @@
 
       setLoading(true, 'Mise à jour du statut...');
       try {
-        await callBackend('modifierStatutCommande', numeroCommande, statut);
-        showToast('Statut de commande mis à jour.', 'success');
-        await refreshApp();
+        if (navigator.onLine) {
+          await callBackend('modifierStatutCommande', numeroCommande, statut);
+        } else {
+          await applyLocalMutation('modifierStatutCommande', [numeroCommande, statut], () => {
+            const c = findLocalOrder(numeroCommande); if (c) c.statut = statut;
+          });
+        }
+        showToast(navigator.onLine ? 'Statut de commande mis à jour.' : 'Statut enregistré hors ligne.', 'success');
+        if (navigator.onLine) await refreshApp();
         await openOrderDetail(numeroCommande);
       } finally {
         setLoading(false);
@@ -1161,9 +1506,15 @@
     async function changeDeliveryStatus(idLivraison, statut) {
       setLoading(true, 'Mise à jour de la livraison...');
       try {
-        await callBackend('modifierStatutLivraison', idLivraison, statut);
-        showToast('Statut de livraison mis à jour.', 'success');
-        await refreshApp();
+        if (navigator.onLine) {
+          await callBackend('modifierStatutLivraison', idLivraison, statut);
+        } else {
+          await applyLocalMutation('modifierStatutLivraison', [idLivraison, statut], () => {
+            const l = findLocalDelivery(idLivraison); if (l) l.statut = statut;
+          });
+        }
+        showToast(navigator.onLine ? 'Statut de livraison mis à jour.' : 'Statut enregistré hors ligne.', 'success');
+        if (navigator.onLine) await refreshApp();
         await openDeliveryDetail(idLivraison);
       } finally {
         setLoading(false);
@@ -1175,9 +1526,15 @@
 
       setLoading(true, 'Enregistrement de la livraison...');
       try {
-        await callBackend('marquerLivraisonLivree', idLivraison);
-        showToast('Livraison marquée comme livrée.', 'success');
-        await refreshApp();
+        if (navigator.onLine) {
+          await callBackend('marquerLivraisonLivree', idLivraison);
+        } else {
+          await applyLocalMutation('marquerLivraisonLivree', [idLivraison], () => {
+            const l = findLocalDelivery(idLivraison); if (l) l.statut = 'Livrée';
+          });
+        }
+        showToast(navigator.onLine ? 'Livraison marquée comme livrée.' : 'Livraison enregistrée hors ligne.', 'success');
+        if (navigator.onLine) await refreshApp();
         await openDeliveryDetail(idLivraison);
       } finally {
         setLoading(false);
@@ -1215,19 +1572,24 @@
 
       setLoading(true, 'Création de la livraison...');
       try {
-        const result = await callBackend('creerLivraison', {
-          numeroCommande,
-          dateLivraison,
-          lieu,
-          quantite,
-          montant,
-          statut: 'À livrer'
-        });
-
+        const idLivraison = 'LIV' + new Date().getFullYear() + String(Date.now()).slice(-8);
+        const deliveryData = { numeroCommande, dateLivraison, lieu, quantite, montant, statut: 'À livrer', idLivraison };
+        if (navigator.onLine) {
+          const result = await callBackend('creerLivraison', deliveryData);
+          deliveryData.idLivraison = result.idLivraison || idLivraison;
+        } else {
+          await queueOperation('creerLivraison', [deliveryData]);
+        }
+        const order = findLocalOrder(numeroCommande);
+        const delivery = { ...deliveryData, client: order?.client || '', contact: order?.contact || '', montantCommande: order?.montantTotal || montant, resteCommande: order?.reste || 0 };
+        state.livraisons.push(delivery);
+        await localPut('livraisonDetails', delivery);
+        if (order) { order.livraisons = order.livraisons || []; order.livraisons.push(delivery); }
+        calculateDashboardLocal();
+        await saveLocalData(state.dashboard, state.commandes, state.livraisons);
         deliveryModal.hide();
-        showToast(`Livraison ${result.idLivraison} créée.`, 'success');
-
-        await refreshApp();
+        showToast(navigator.onLine ? `Livraison ${deliveryData.idLivraison} créée.` : `Livraison ${deliveryData.idLivraison} créée hors ligne.`, 'success');
+        if (navigator.onLine) await refreshApp();
         await openOrderDetail(numeroCommande);
       } finally {
         setLoading(false);
@@ -1251,9 +1613,15 @@
 
       setLoading(true, 'Mise à jour du paiement...');
       try {
-        await callBackend('modifierPaiement', numeroCommande, amount);
-        showToast('Paiement mis à jour.', 'success');
-        await refreshApp();
+        if (navigator.onLine) {
+          await callBackend('modifierPaiement', numeroCommande, amount);
+        } else {
+          await applyLocalMutation('modifierPaiement', [numeroCommande, amount], () => {
+            const c = findLocalOrder(numeroCommande); if (c) { c.acompte = amount; c.reste = Math.max(0, Number(c.montantTotal || 0) - amount); }
+          });
+        }
+        showToast(navigator.onLine ? 'Paiement mis à jour.' : 'Paiement enregistré hors ligne.', 'success');
+        if (navigator.onLine) await refreshApp();
         await openOrderDetail(numeroCommande);
       } finally {
         setLoading(false);
@@ -1287,18 +1655,17 @@
 
       setLoading(true, 'Modification de la commande...');
       try {
-        await callBackend('modifierCommande', {
-          numeroCommande,
-          client,
-          contact,
-          lieuLivraison,
-          dateLivraisonPrevue,
-          numeroFacture,
-          notes
-        });
-
-        showToast('Commande modifiée.', 'success');
-        await refreshApp();
+        const editData = { numeroCommande, client, contact, lieuLivraison, dateLivraisonPrevue, numeroFacture, notes };
+        if (navigator.onLine) {
+          await callBackend('modifierCommande', editData);
+        } else {
+          await applyLocalMutation('modifierCommande', [editData], () => {
+            const c = findLocalOrder(numeroCommande);
+            if (c) Object.assign(c, { client, contact, lieuLivraison, dateLivraisonPrevue, numeroFacture, notes });
+          });
+        }
+        showToast(navigator.onLine ? 'Commande modifiée.' : 'Modification enregistrée hors ligne.', 'success');
+        if (navigator.onLine) await refreshApp();
         await openOrderDetail(numeroCommande);
       } finally {
         setLoading(false);
@@ -1319,10 +1686,17 @@
 
       setLoading(true, 'Suppression...');
       try {
-        await callBackend('supprimerCommande', numeroCommande);
+        if (navigator.onLine) {
+          await callBackend('supprimerCommande', numeroCommande);
+        } else {
+          await applyLocalMutation('supprimerCommande', [numeroCommande], () => {
+            state.commandes = state.commandes.filter(c => String(c.numeroCommande) !== String(numeroCommande));
+            state.livraisons = state.livraisons.filter(l => String(l.numeroCommande) !== String(numeroCommande));
+          });
+        }
         state.selectedOrder = null;
-        showToast('Commande supprimée.', 'success');
-        await refreshApp();
+        showToast(navigator.onLine ? 'Commande supprimée.' : 'Suppression enregistrée hors ligne.', 'success');
+        if (navigator.onLine) await refreshApp();
         showScreen('orders');
       } finally {
         setLoading(false);
@@ -1362,7 +1736,7 @@
     async function openInvoice(numeroCommande) {
       const c = state.selectedOrder && state.selectedOrder.numeroCommande === numeroCommande
         ? state.selectedOrder
-        : await callBackend('getCommande', numeroCommande);
+        : (await localGet('commandeDetails', numeroCommande)) || await callBackend('getCommande', numeroCommande);
 
       state.selectedOrder = c;
 
